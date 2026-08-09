@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "project": {
+    "name": "workspace",
+    "productType": null,
+    "stack": []
+  },
+  "sources": {
+    "tokens": [],
+    "components": [],
+    "assets": [],
+    "instructions": []
+  },
+  "design": {
+    "colorMode": "unknown",
+    "colors": {},
+    "typography": {},
+    "spacing": {},
+    "radius": {},
+    "shadows": {},
+    "motion": {},
+    "density": "unknown"
+  },
+  "components": {
+    "installed": [],
+    "preferredPrimitives": [],
+    "patterns": []
+  },
+  "constraints": {
+    "must": [],
+    "avoid": []
+  },
+  "decisions": [
+    {
+      "id": "live-portfolio-stats-rail",
+      "decision": "Use a compact border-only three-column statistics rail between the hero and selected work, reusing the existing mono labels, lime accent, spacing, and shared motion tokens; collapse to a two-column grid with the derived active-build metric spanning the final row on mobile.",
+      "reason": "This preserves the approved editorial engineering language and hierarchy without introducing cards, a new visual system, or fabricated metrics."
+    }
+  ],
+  "evidence": [],
+  "generatedAt": "2026-08-09T15:03:01.199Z"
+}

@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "project": {
+    "name": "@workspace/portfolio",
+    "productType": "portfolio",
+    "stack": [
+      "react",
+      "shadcn",
+      "tailwind-v3",
+      "vite"
+    ]
+  },
+  "sources": {
+    "tokens": [
+      "src/index.css"
+    ],
+    "components": [
+      "src/components/ui"
+    ],
+    "assets": [],
+    "instructions": []
+  },
+  "design": {
+    "colorMode": "dark",
+    "colors": {
+      "--color-background": {
+        "value": "var(--bg)",
+        "source": "src/index.css"
+      },
+      "--color-foreground": {
+        "value": "var(--fg)",
+        "source": "src/index.css"
+      },
+      "--color-muted": {
+        "value": "var(--muted)",
+        "source": "src/index.css"
+      },
+      "--color-line": {
+        "value": "var(--line)",
+        "source": "src/index.css"
+      },
+      "--color-panel": {
+        "value": "var(--panel)",
+        "source": "src/index.css"
+      },
+      "--color-accent": {
+        "value": "var(--accent)",
+        "source": "src/index.css"
+      },
+      "--muted": {
+        "value": "#5e6158",
+        "source": "src/index.css"
+      },
+      "--accent": {
+        "value": "#395b12",
+        "source": "src/index.css"
+      }
+    },
+    "typography": {
+      "--font-sans": {
+        "value": "'Inter', ui-sans-serif, system-ui",
+        "source": "src/index.css"
+      },
+      "--font-mono": {
+        "value": "'IBM Plex Mono', ui-monospace, monospace",
+        "source": "src/index.css"
+      }
+    },
+    "spacing": {},
+    "radius": {},
+    "shadows": {},
+    "motion": {},
+    "density": "unknown"
+  },
+  "components": {
+    "installed": [
+      "accordion",
+      "alert",
+      "alert-dialog",
+      "aspect-ratio",
+      "avatar",
+      "badge",
+      "breadcrumb",
+      "button",
+      "button-group",
+      "calendar",
+      "card",
+      "carousel",
+      "chart",
+      "checkbox",
+      "collapsible",
+      "command",
+      "context-menu",
+      "dialog",
+      "drawer",
+      "dropdown-menu",
+      "empty",
+      "field",
+      "form",
+      "hover-card",
+      "input",
+      "input-group",
+      "input-otp",
+      "item",
+      "kbd",
+      "label",
+      "menubar",
+      "navigation-menu",
+      "pagination",
+      "popover",
+      "progress",
+      "radio-group",
+      "resizable",
+      "scroll-area",
+      "select",
+      "separator",
+      "sheet",
+      "sidebar",
+      "skeleton",
+      "slider",
+      "sonner",
+      "spinner",
+      "switch",
+      "table",
+      "tabs",
+      "textarea",
+      "toast",
+      "toaster",
+      "toggle",
+      "toggle-group",
+      "tooltip"
+    ],
+    "preferredPrimitives": [
+      "radix-ui"
+    ],
+    "patterns": []
+  },
+  "constraints": {
+    "must": [
+      "Preserve the dark editorial identity, lime accent, typography, section order, and restrained interaction language",
+      "Respect reduced motion and visible keyboard focus"
+    ],
+    "avoid": [
+      "Neon glow effects, generic gradients, glassmorphism, oversized rounded cards, decorative 3D, and generic AI imagery"
+    ]
+  },
+  "decisions": [
+    "Use a reusable opacity-plus-translation viewport reveal with subtle stagger and 2–4px hover movement",
+    "Present skills as a technical inventory matrix and workflows as editorial grids with controlled lime markers",
+    "Use the background-keyed alpha WebM as a compact floating chat launcher with no mask, halo, permanent label, or pill surface"
+  ],
+  "evidence": [
+    {
+      "fact": "components.installed",
+      "source": "src/components/ui"
+    },
+    {
+      "fact": "design.colorMode:dark",
+      "source": "src/index.css"
+    },
+    {
+      "fact": "design.tokens",
+      "source": "src/index.css"
+    },
+    {
+      "fact": "project.stack:react",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:shadcn",
+      "source": "components.json"
+    },
+    {
+      "fact": "project.stack:tailwind-v3",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:vite",
+      "source": "package.json"
+    }
+  ],
+  "generatedAt": "2026-08-09T12:53:53.942Z"
+}

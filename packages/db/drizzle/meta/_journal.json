@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1786277007106,
+      "tag": "0000_contact_messages_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786277054873,
+      "tag": "0001_remove_contact_ip_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786288007003,
+      "tag": "0002_portfolio_visitors",
+      "breakpoints": true
+    }
+  ]
+}

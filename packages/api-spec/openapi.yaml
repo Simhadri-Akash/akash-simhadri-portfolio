@@ -1,0 +1,254 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: Portfolio API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: contact
+    description: Contact form
+  - name: chat
+    description: AI chatbot
+  - name: portfolio
+    description: Privacy-safe portfolio statistics
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /readyz:
+    get:
+      operationId: readinessCheck
+      tags: [health]
+      summary: Readiness check
+      responses:
+        "200":
+          description: Ready to serve dependency-backed requests
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: Required dependency is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+  /contact:
+    post:
+      operationId: submitContact
+      tags: [contact]
+      summary: Submit a contact message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactInput"
+      responses:
+        "201":
+          description: Message submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactResult"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /portfolio/stats:
+    get:
+      operationId: getPortfolioStats
+      tags: [portfolio]
+      summary: Get live portfolio statistics
+      responses:
+        "200":
+          description: Current visitor, inquiry, and active-build totals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortfolioStats"
+        "503":
+          description: Statistics storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /portfolio/visit:
+    post:
+      operationId: recordPortfolioVisit
+      tags: [portfolio]
+      summary: Record an anonymous portfolio visit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PortfolioVisitInput"
+      responses:
+        "204":
+          description: Visit recorded
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "503":
+          description: Statistics storage is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /chat:
+    post:
+      operationId: sendChatMessage
+      tags: [chat]
+      summary: Send a message to the portfolio chatbot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+      required:
+        - status
+    ContactInput:
+      type: object
+      required: [name, email, subject, message]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 160
+        subject:
+          type: string
+          minLength: 3
+          maxLength: 120
+        message:
+          type: string
+          minLength: 20
+          maxLength: 3000
+    ContactResult:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+    PortfolioVisitInput:
+      type: object
+      additionalProperties: false
+      required: [visitorId]
+      properties:
+        visitorId:
+          type: string
+          format: uuid
+    PortfolioStats:
+      type: object
+      additionalProperties: false
+      required: [visitors, inquiries, activeBuilds]
+      properties:
+        visitors:
+          type: integer
+          minimum: 0
+        inquiries:
+          type: integer
+          minimum: 0
+        activeBuilds:
+          type: integer
+          minimum: 0
+    ChatInput:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 2
+          maxLength: 800
+    ChatResponse:
+      type: object
+      required: [answer, suggestedQuestions]
+      additionalProperties: false
+      properties:
+        answer:
+          type: string
+          minLength: 1
+          maxLength: 1600
+        suggestedQuestions:
+          type: array
+          minItems: 0
+          maxItems: 4
+          items:
+            type: string
+            minLength: 1
+            maxLength: 120
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string

@@ -1,0 +1,1 @@
+ALTER TABLE "contact_messages" DROP COLUMN "ip_hash";
