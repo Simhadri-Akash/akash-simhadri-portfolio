@@ -1,5 +1,7 @@
 import OpenAI from "openai";
-import { SYSTEM_PROMPT } from "./portfolio-chat";
+import { zodResponseFormat } from "openai/helpers/zod";
+import { logger } from "../lib/logger";
+import { ProviderOutputSchema, SYSTEM_PROMPT } from "./portfolio-chat";
 
 export type ChatProviderName = "openai" | "gemini";
 
@@ -14,9 +16,11 @@ interface ProviderSelection {
   unavailableReason?: "unconfigured" | "invalid_provider";
 }
 
-const DEFAULT_MODELS: Record<ChatProviderName, string> = {
+// Exported so the source default can be asserted directly in tests, keeping
+// it honest against whatever production is actually configured to run.
+export const DEFAULT_MODELS: Record<ChatProviderName, string> = {
   openai: "gpt-4.1-mini",
-  gemini: "gemini-2.5-flash",
+  gemini: "gemini-3.6-flash",
 };
 
 export class ProviderTimeoutError extends Error {
@@ -31,11 +35,15 @@ function configuredValue(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
-// Both OpenAI and Gemini's OpenAI-compatible endpoint accept this exact
-// request shape, including structured-output `response_format`, so it is
-// built once and shared. Exported for direct unit testing of the request
-// payload without needing a real network call.
+// Both OpenAI and Gemini's OpenAI-compatible endpoint accept this request
+// shape. `response_format` is derived once from the single authoritative
+// `ProviderOutputSchema` (see portfolio-chat.ts) via the SDK's own
+// `zodResponseFormat` helper, so the request-time schema hint sent to the
+// provider and the response-time validator can never drift apart.
+// Exported for direct unit testing of the request payload without needing a
+// real network call.
 export function buildChatCompletionRequest(
+  name: ChatProviderName,
   model: string,
   message: string,
 ): OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
@@ -47,29 +55,39 @@ export function buildChatCompletionRequest(
     ],
     // `max_tokens` is deprecated by the OpenAI Chat Completions API in favor
     // of `max_completion_tokens`; Gemini's OpenAI-compatible endpoint only
-    // accepts the current parameter name. Never send both.
-    max_completion_tokens: 350,
+    // accepts the current parameter name. Never send both. Gemini 3.6 Flash
+    // is a thinking model — its reasoning tokens draw from the same
+    // completion budget as the final answer, so it gets more headroom than
+    // a non-reasoning model like OpenAI's gpt-4.1-mini, which is left as-is.
+    max_completion_tokens: name === "gemini" ? 700 : 350,
     temperature: 0.2,
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "portfolio_chat_response",
-        strict: true,
-        schema: {
-          type: "object",
-          additionalProperties: false,
-          required: ["answer", "suggestions"],
-          properties: {
-            answer: { type: "string" },
-            suggestions: {
-              type: "array",
-              maxItems: 4,
-              items: { type: "string" },
-            },
-          },
-        },
-      },
-    },
+    // This portfolio FAQ doesn't need extensive reasoning; keep Gemini 3.6
+    // Flash's thinking budget minimal. Not a supported/needed param for the
+    // OpenAI model in use, so it's only sent for Gemini.
+    ...(name === "gemini" ? { reasoning_effort: "low" as const } : {}),
+    response_format: zodResponseFormat(
+      ProviderOutputSchema,
+      "portfolio_chat_response",
+    ),
+  };
+}
+
+/**
+ * Safe, content-free diagnostics for when a provider's structured output
+ * comes back missing or unparseable — enough to diagnose the failure mode
+ * (e.g. truncated by the token budget vs. a genuine schema mismatch)
+ * without ever logging the model's actual answer, the user's message, or
+ * the system prompt.
+ */
+export function describeInvalidStructuredOutput(choice: {
+  finish_reason?: string | null;
+  message?: { parsed?: unknown; content?: string | null };
+} | undefined): { finishReason?: string; hasParsedOutput: boolean; contentLength: number } {
+  const content = choice?.message?.content ?? "";
+  return {
+    ...(choice?.finish_reason ? { finishReason: choice.finish_reason } : {}),
+    hasParsedOutput: choice?.message?.parsed != null,
+    contentLength: content.length,
   };
 }
 
@@ -91,12 +109,26 @@ function createOpenAICompatibleProvider(
   return {
     name,
     async complete(message, signal) {
-      const completion = await client.chat.completions.create(
-        buildChatCompletionRequest(model, message),
+      const completion = await client.chat.completions.parse(
+        buildChatCompletionRequest(name, model, message),
         { signal },
       );
 
-      return completion.choices[0]?.message?.content ?? "";
+      const choice = completion.choices[0];
+      const parsed = choice?.message?.parsed;
+
+      if (!parsed) {
+        logger.warn(
+          { provider: name, ...describeInvalidStructuredOutput(choice) },
+          "Chat provider structured output missing or unparseable",
+        );
+      }
+
+      // `parsed` is the SDK-verified structured result; re-serializing it
+      // keeps parseProviderOutput() as the one final defense-in-depth
+      // validator downstream. If parsing failed, the raw content (if any)
+      // is passed through unchanged for that same validator to reject.
+      return parsed ? JSON.stringify(parsed) : (choice?.message?.content ?? "");
     },
   };
 }

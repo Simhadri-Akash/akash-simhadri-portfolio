@@ -9,6 +9,8 @@ import {
   buildChatCompletionRequest,
   buildConfiguredChatProvider,
   classifyProviderFailure,
+  DEFAULT_MODELS,
+  describeInvalidStructuredOutput,
   safeProviderErrorDetails,
   type ChatProvider,
 } from "./services/chat-provider";
@@ -258,6 +260,10 @@ function withEnv(values: Record<string, string | undefined>, run: () => void): v
   }
 }
 
+test("the source default Gemini model matches the production model (gemini-3.6-flash)", () => {
+  assert.equal(DEFAULT_MODELS.gemini, "gemini-3.6-flash");
+});
+
 test("AI_PROVIDER=gemini with a configured key selects the Gemini provider", () => {
   withEnv(
     {
@@ -287,28 +293,103 @@ test("no AI_PROVIDER configured defaults to openai, and with no key falls back t
   );
 });
 
-test("the shared chat-completion request uses max_completion_tokens, never max_tokens", () => {
-  const request = buildChatCompletionRequest("gemini-2.5-flash", "What is DonorHub?");
-  assert.equal(request.max_completion_tokens, 350);
+function jsonSchemaOf(request: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming) {
+  assert.equal(request.response_format?.type, "json_schema");
+  return (request.response_format as unknown as {
+    json_schema: { name: string; strict: boolean; schema: Record<string, unknown> };
+  }).json_schema;
+}
+
+test("Gemini request uses max_completion_tokens (never max_tokens) with a 700-token budget for its thinking + answer", () => {
+  const request = buildChatCompletionRequest("gemini", "gemini-3.6-flash", "What is DonorHub?");
+  assert.equal(request.max_completion_tokens, 700);
   assert.equal("max_tokens" in request, false);
 });
 
-test("the shared chat-completion request includes strict structured-output json_schema (used for both providers, including Gemini)", () => {
-  const request = buildChatCompletionRequest("gemini-2.5-flash", "What is DonorHub?");
-  assert.equal(request.response_format?.type, "json_schema");
-  const jsonSchema = (request.response_format as unknown as {
-    json_schema: { strict: boolean; schema: unknown };
-  }).json_schema;
-  assert.equal(jsonSchema.strict, true);
-  assert.deepEqual(jsonSchema.schema, {
-    type: "object",
-    additionalProperties: false,
-    required: ["answer", "suggestions"],
-    properties: {
-      answer: { type: "string" },
-      suggestions: { type: "array", maxItems: 4, items: { type: "string" } },
-    },
+test("Gemini request sets reasoning_effort to low", () => {
+  const request = buildChatCompletionRequest("gemini", "gemini-3.6-flash", "What is DonorHub?");
+  assert.equal(request.reasoning_effort, "low");
+});
+
+test("OpenAI request is unaffected: 350-token budget, no reasoning_effort, still max_completion_tokens", () => {
+  const request = buildChatCompletionRequest("openai", "gpt-4.1-mini", "What is DonorHub?");
+  assert.equal(request.max_completion_tokens, 350);
+  assert.equal("max_tokens" in request, false);
+  assert.equal("reasoning_effort" in request, false);
+});
+
+test("both providers use the SDK's structured-output mechanism, derived from the one authoritative Zod schema (portfolio_chat_response)", () => {
+  for (const [name, model] of [["gemini", "gemini-3.6-flash"], ["openai", "gpt-4.1-mini"]] as const) {
+    const schema = jsonSchemaOf(buildChatCompletionRequest(name, model, "What is DonorHub?"));
+    assert.equal(schema.name, "portfolio_chat_response");
+    assert.equal(schema.strict, true);
+    assert.equal(schema.schema.type, "object");
+    assert.equal(schema.schema.additionalProperties, false);
+    assert.deepEqual(schema.schema.required, ["answer", "suggestions"]);
+    assert.deepEqual((schema.schema.properties as Record<string, unknown>).answer, { type: "string" });
+    assert.deepEqual((schema.schema.properties as Record<string, unknown>).suggestions, {
+      type: "array",
+      items: { type: "string" },
+    });
+  }
+});
+
+test("describeInvalidStructuredOutput reports only safe, content-free metadata", () => {
+  const details = describeInvalidStructuredOutput({
+    finish_reason: "length",
+    message: { parsed: null, content: "a very sensitive partial answer that must never be logged" },
   });
+  assert.deepEqual(details, { finishReason: "length", hasParsedOutput: false, contentLength: 57 });
+  assert.doesNotMatch(JSON.stringify(details), /sensitive partial answer/);
+});
+
+test("describeInvalidStructuredOutput reports hasParsedOutput: true when parsing succeeded", () => {
+  const details = describeInvalidStructuredOutput({
+    finish_reason: "stop",
+    message: { parsed: { answer: "ok", suggestions: [] }, content: "{}" },
+  });
+  assert.equal(details.hasParsedOutput, true);
+});
+
+test("describeInvalidStructuredOutput handles a missing/undefined choice safely", () => {
+  assert.deepEqual(describeInvalidStructuredOutput(undefined), {
+    hasParsedOutput: false,
+    contentLength: 0,
+  });
+});
+
+test("a valid Gemini structured-parse result is accepted end to end, publicly shaped as answer + suggestedQuestions", async () => {
+  await withChatServer(
+    // Simulates createOpenAICompatibleProvider's real behavior on a
+    // successful parse: JSON.stringify(completion.choices[0].message.parsed).
+    provider(async () => JSON.stringify({
+      answer: "DonorHub's core platform is completed; UI/UX modernization is in progress.",
+      suggestions: ["What is SkillForge?", "Tell me about CampusConnect"],
+    }), "gemini"),
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, chatRequest("Tell me about DonorHub", "203.0.113.163"));
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        answer: "DonorHub's core platform is completed; UI/UX modernization is in progress.",
+        suggestedQuestions: ["What is SkillForge?", "Tell me about CampusConnect"],
+      });
+    },
+  );
+});
+
+test("a Gemini response with more than 4 suggestions is still accepted and clamped to 4, not rejected", async () => {
+  await withChatServer(
+    provider(async () => JSON.stringify({
+      answer: "Akash's projects span full-stack and AI work.",
+      suggestions: ["one", "two", "three", "four", "five"],
+    }), "gemini"),
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, chatRequest("What projects has he built?", "203.0.113.164"));
+      const body = await jsonBody<ChatBody>(response);
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.suggestedQuestions, ["one", "two", "three", "four"]);
+    },
+  );
 });
 
 test("malformed Gemini provider output activates the safe local fallback", async () => {

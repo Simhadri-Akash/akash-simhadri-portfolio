@@ -4,7 +4,14 @@ const MAX_ANSWER_LENGTH = 1_600;
 const MAX_SUGGESTIONS = 4;
 const MAX_SUGGESTION_LENGTH = 120;
 
-const ProviderOutputSchema = z
+// The one authoritative schema for the provider's structured output. Used
+// both to build the request-time structured-output hint sent to the
+// provider (see `buildChatCompletionRequest` in chat-provider.ts) and, here,
+// as the final defense-in-depth validator of whatever comes back — so the
+// two can never drift out of sync. Deliberately has no `.max()` on
+// `suggestions`: over-length responses are still accepted here and clamped
+// by `normalizeProviderOutput` below, rather than being rejected outright.
+export const ProviderOutputSchema = z
   .object({
     answer: z.string(),
     suggestions: z.array(z.string()),
