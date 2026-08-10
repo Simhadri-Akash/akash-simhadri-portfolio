@@ -995,20 +995,6 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
 
-/* ── Print Styles (Resume PDF) ── */
-@media print {
-  body * { visibility: hidden !important; }
-  .resume-overlay, .resume-overlay * { visibility: visible !important; }
-  .resume-overlay { position: static !important; background: none !important; backdrop-filter: none !important; }
-  .resume-modal { width: 100% !important; height: auto !important; border: none !important; }
-  .resume-toolbar { display: none !important; }
-  .resume-body { padding: 0 !important; overflow: visible !important; }
-  .rv-header { border-bottom: 2px solid #000 !important; }
-  .rv-section { border-bottom: 1px solid #ccc !important; }
-  * { color: #000 !important; background: #fff !important; border-color: #ccc !important; }
-  a { text-decoration: underline; }
-}
-
 /* ── Responsive ── */
 @media(max-width: 1100px) {
   .approach-grid { grid-template-columns: repeat(3, 1fr); }

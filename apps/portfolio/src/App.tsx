@@ -1189,10 +1189,8 @@ function Contact() {
 
 // ─── Resume Modal ─────────────────────────────────────────────────────────────
 function Resume({ onClose }: { onClose: () => void }) {
-  const printRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-  function handlePrint() { window.print(); }
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -1239,13 +1237,17 @@ function Resume({ onClose }: { onClose: () => void }) {
         <div className="resume-toolbar">
           <span className="resume-toolbar-title" id="resume-dialog-title">Resume</span>
           <div className="resume-toolbar-actions">
-            <button className="primary resume-print-btn" onClick={handlePrint}>
+            <a
+              className="primary resume-print-btn"
+              href="/resume/Akash-Simhadri-Resume.pdf"
+              download="Akash-Simhadri-Resume.pdf"
+            >
               <Download size={15} /> Download PDF
-            </button>
+            </a>
             <button ref={closeButtonRef} className="icon resume-close" onClick={onClose} aria-label="Close resume"><X /></button>
           </div>
         </div>
-        <div className="resume-body" ref={printRef} id="resume-print-target">
+        <div className="resume-body">
           {/* Header */}
           <div className="rv-header">
             <div>
