@@ -1024,7 +1024,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
   }
   nav.open { display: flex; }
   .mobile { display: block; }
-  .hero { grid-template-columns: 1fr; padding-top: 60px; }
+  /* min-height:100vh + centering (the desktop rule) creates a large empty
+     gap above the hero on real mobile browsers, where 100vh is taller than
+     the visible viewport while the address bar is still showing. On mobile
+     the hero should size to its content and start right below the navbar. */
+  .hero { grid-template-columns: 1fr; padding-top: 60px; min-height: auto; align-items: start; }
   .ops { transform: none; }
   .ops:hover { transform: none; }
   .section-head, .about, .contact, .process { grid-template-columns: 1fr; display: grid; }
@@ -1046,7 +1050,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
     margin-inline: auto; border-radius: 22px;
     box-shadow: 10px 10px 0 color-mix(in srgb, var(--accent) 18%, transparent);
   }
-  .hero-portrait img { height: min(68vh, 620px); }
+  /* Aspect-ratio instead of a vh-based height: matches the image's own
+     intrinsic ratio (1148x1600) so it can never collapse or overshoot when
+     a real mobile browser's viewport height changes as the address bar
+     shows/hides, and introduces no layout shift. */
+  .hero-portrait img { height: auto; aspect-ratio: 1148 / 1600; }
   .rv-header { grid-template-columns: 1fr; }
   .rv-contact { text-align: left; }
   .resume-body { padding: 28px; }

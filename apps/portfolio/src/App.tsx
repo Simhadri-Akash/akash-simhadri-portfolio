@@ -50,17 +50,32 @@ function useTilt() {
 function Nav({ onResume, resumeButtonRef }: { onResume: () => void; resumeButtonRef: React.RefObject<HTMLButtonElement | null> }) {
   const [open, setOpen] = useState(false);
   const [dark, setDark] = useState(true);
+  const navRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     const isLight = document.documentElement.dataset.theme === 'light';
     if (isLight !== !dark) setDark(!isLight);
   }, []);
   useEffect(() => {
     if (!open) return;
+    const closeAndRestoreFocus = () => {
+      setOpen(false);
+      menuButtonRef.current?.focus();
+    };
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !document.querySelector('.resume-overlay')) setOpen(false);
+      if (event.key === 'Escape' && !document.querySelector('.resume-overlay')) closeAndRestoreFocus();
+    };
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (navRef.current?.contains(target) || menuButtonRef.current?.contains(target)) return;
+      setOpen(false);
     };
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('mousedown', handleOutsideClick);
+    };
   }, [open]);
   function toggleTheme() {
     const nd = !dark;
@@ -71,18 +86,19 @@ function Nav({ onResume, resumeButtonRef }: { onResume: () => void; resumeButton
   return (
     <header>
       <a className="mark" href="#top" aria-label="Home">AS<span>.</span></a>
-      <nav id="primary-navigation" className={open ? 'open' : ''} aria-label="Primary">
+      <nav ref={navRef} id="primary-navigation" className={open ? 'open' : ''} aria-label="Primary">
         {items.map(x => (
           <a onClick={() => setOpen(false)} href={`#${x}`} key={x}>{x}</a>
         ))}
-        <button ref={resumeButtonRef} className="nav-resume-btn" onClick={onResume}>resume</button>
-        <a href="mailto:akashsimhadri4@gmail.com">email</a>
+        <button ref={resumeButtonRef} className="nav-resume-btn" onClick={() => { setOpen(false); onResume(); }}>resume</button>
+        <a onClick={() => setOpen(false)} href="mailto:akashsimhadri4@gmail.com">email</a>
       </nav>
       <div className="nav-actions">
         <button className="icon" onClick={toggleTheme} aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}>
           {dark ? <Sun /> : <Moon />}
         </button>
         <button
+          ref={menuButtonRef}
           className="icon mobile"
           onClick={() => setOpen(!open)}
           aria-label={open ? 'Close menu' : 'Open menu'}
