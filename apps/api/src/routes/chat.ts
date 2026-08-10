@@ -7,6 +7,7 @@ import {
   buildConfiguredChatProvider,
   classifyProviderFailure,
   ProviderTimeoutError,
+  safeProviderErrorDetails,
   type ChatProvider,
 } from "../services/chat-provider";
 import {
@@ -106,6 +107,7 @@ export function createChatRouter(options: ChatRouterOptions = {}): IRouter {
         {
           provider: configured.providerName,
           category: classifyProviderFailure(error),
+          ...safeProviderErrorDetails(error),
         },
         "Chat provider request failed; using fallback",
       );

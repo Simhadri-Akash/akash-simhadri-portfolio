@@ -31,6 +31,48 @@ function configuredValue(value: string | undefined): string | undefined {
   return normalized ? normalized : undefined;
 }
 
+// Both OpenAI and Gemini's OpenAI-compatible endpoint accept this exact
+// request shape, including structured-output `response_format`, so it is
+// built once and shared. Exported for direct unit testing of the request
+// payload without needing a real network call.
+export function buildChatCompletionRequest(
+  model: string,
+  message: string,
+): OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming {
+  return {
+    model,
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: message },
+    ],
+    // `max_tokens` is deprecated by the OpenAI Chat Completions API in favor
+    // of `max_completion_tokens`; Gemini's OpenAI-compatible endpoint only
+    // accepts the current parameter name. Never send both.
+    max_completion_tokens: 350,
+    temperature: 0.2,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "portfolio_chat_response",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["answer", "suggestions"],
+          properties: {
+            answer: { type: "string" },
+            suggestions: {
+              type: "array",
+              maxItems: 4,
+              items: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
 function createOpenAICompatibleProvider(
   name: ChatProviderName,
   apiKey: string,
@@ -50,39 +92,7 @@ function createOpenAICompatibleProvider(
     name,
     async complete(message, signal) {
       const completion = await client.chat.completions.create(
-        {
-          model,
-          messages: [
-            { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: message },
-          ],
-          max_tokens: 350,
-          temperature: 0.2,
-          ...(name === "openai"
-            ? {
-                response_format: {
-                  type: "json_schema" as const,
-                  json_schema: {
-                    name: "portfolio_chat_response",
-                    strict: true,
-                    schema: {
-                      type: "object",
-                      additionalProperties: false,
-                      required: ["answer", "suggestions"],
-                      properties: {
-                        answer: { type: "string" },
-                        suggestions: {
-                          type: "array",
-                          maxItems: 4,
-                          items: { type: "string" },
-                        },
-                      },
-                    },
-                  },
-                },
-              }
-            : {}),
-        },
+        buildChatCompletionRequest(model, message),
         { signal },
       );
 
@@ -122,6 +132,25 @@ export function buildConfiguredChatProvider(): ProviderSelection {
   return {
     provider: createOpenAICompatibleProvider(name, apiKey, model),
     providerName: name,
+  };
+}
+
+/**
+ * Safe, minimal diagnostic fields for a provider failure — HTTP status and
+ * the provider's own short error code/type, nothing else. Never includes
+ * the error message, request/response bodies, headers, or any credential —
+ * those can carry upstream-echoed request content or provider-specific
+ * detail that shouldn't reach logs.
+ */
+export function safeProviderErrorDetails(
+  error: unknown,
+): { status?: number; code?: string; type?: string } {
+  if (!(error instanceof OpenAI.APIError)) return {};
+
+  return {
+    ...(typeof error.status === "number" ? { status: error.status } : {}),
+    ...(typeof error.code === "string" ? { code: error.code } : {}),
+    ...(typeof error.type === "string" ? { type: error.type } : {}),
   };
 }
 

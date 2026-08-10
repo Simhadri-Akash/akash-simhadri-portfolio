@@ -4,7 +4,14 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { test } from "node:test";
 import type { Express } from "express";
-import type { ChatProvider } from "./services/chat-provider";
+import OpenAI from "openai";
+import {
+  buildChatCompletionRequest,
+  buildConfiguredChatProvider,
+  classifyProviderFailure,
+  safeProviderErrorDetails,
+  type ChatProvider,
+} from "./services/chat-provider";
 import { localAnswer, SYSTEM_PROMPT } from "./services/portfolio-chat";
 
 process.env.NODE_ENV = "test";
@@ -37,8 +44,11 @@ async function stopServer(server: Server): Promise<void> {
   });
 }
 
-function provider(complete: Provider["complete"]): Provider {
-  return { name: "openai", complete };
+function provider(
+  complete: Provider["complete"],
+  name: Provider["name"] = "openai",
+): Provider {
+  return { name, complete };
 }
 
 function chatRequest(message: unknown, clientIp: string): RequestInit {
@@ -227,4 +237,152 @@ test("chat rate limiting remains operational", async () => {
     assert.equal(limited.status, 429);
     assert.deepEqual(await limited.json(), { error: "Too many requests. Please try again later." });
   });
+});
+
+// ─── Gemini provider fix regression coverage ────────────────────────────────
+
+function withEnv(values: Record<string, string | undefined>, run: () => void): void {
+  const previous: Record<string, string | undefined> = {};
+  for (const key of Object.keys(values)) previous[key] = process.env[key];
+  try {
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    run();
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test("AI_PROVIDER=gemini with a configured key selects the Gemini provider", () => {
+  withEnv(
+    {
+      AI_PROVIDER: "gemini",
+      GEMINI_API_KEY: "test-gemini-key",
+      GEMINI_MODEL: undefined,
+      OPENAI_API_KEY: undefined,
+    },
+    () => {
+      const selection = buildConfiguredChatProvider();
+      assert.equal(selection.providerName, "gemini");
+      assert.equal(selection.provider?.name, "gemini");
+      assert.equal(selection.unavailableReason, undefined);
+    },
+  );
+});
+
+test("no AI_PROVIDER configured defaults to openai, and with no key falls back to null (local answer path)", () => {
+  withEnv(
+    { AI_PROVIDER: undefined, OPENAI_API_KEY: undefined, GEMINI_API_KEY: undefined },
+    () => {
+      const selection = buildConfiguredChatProvider();
+      assert.equal(selection.providerName, "openai");
+      assert.equal(selection.provider, null);
+      assert.equal(selection.unavailableReason, "unconfigured");
+    },
+  );
+});
+
+test("the shared chat-completion request uses max_completion_tokens, never max_tokens", () => {
+  const request = buildChatCompletionRequest("gemini-2.5-flash", "What is DonorHub?");
+  assert.equal(request.max_completion_tokens, 350);
+  assert.equal("max_tokens" in request, false);
+});
+
+test("the shared chat-completion request includes strict structured-output json_schema (used for both providers, including Gemini)", () => {
+  const request = buildChatCompletionRequest("gemini-2.5-flash", "What is DonorHub?");
+  assert.equal(request.response_format?.type, "json_schema");
+  const jsonSchema = (request.response_format as unknown as {
+    json_schema: { strict: boolean; schema: unknown };
+  }).json_schema;
+  assert.equal(jsonSchema.strict, true);
+  assert.deepEqual(jsonSchema.schema, {
+    type: "object",
+    additionalProperties: false,
+    required: ["answer", "suggestions"],
+    properties: {
+      answer: { type: "string" },
+      suggestions: { type: "array", maxItems: 4, items: { type: "string" } },
+    },
+  });
+});
+
+test("malformed Gemini provider output activates the safe local fallback", async () => {
+  await withChatServer(
+    provider(async () => "not valid json at all", "gemini"),
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, chatRequest("What are his skills?", "203.0.113.160"));
+      const body = await jsonBody<ChatBody>(response);
+      assert.equal(response.status, 200);
+      assert.match(body.answer, /TypeScript/);
+    },
+  );
+});
+
+test("a Gemini 400 API error activates the safe local fallback", async () => {
+  const geminiBadRequest = new OpenAI.APIError(
+    400,
+    { message: "Unsupported parameter", type: "invalid_request_error", code: "invalid_value" },
+    "400 Unsupported parameter",
+    undefined,
+  );
+  await withChatServer(
+    provider(async () => { throw geminiBadRequest; }, "gemini"),
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, chatRequest("Tell me about Akash", "203.0.113.161"));
+      const body = await jsonBody<ChatBody>(response);
+      assert.equal(response.status, 200);
+      assert.match(body.answer, /Andhra Pradesh/);
+    },
+  );
+});
+
+test("safe error categorization: a 400 APIError classifies as provider_error and exposes only status/code/type", () => {
+  const error = new OpenAI.APIError(
+    400,
+    { message: "sensitive upstream detail that must never be logged", type: "invalid_request_error", code: "invalid_value" },
+    "400 sensitive upstream detail that must never be logged",
+    undefined,
+  );
+
+  assert.equal(classifyProviderFailure(error), "provider_error");
+
+  const details = safeProviderErrorDetails(error);
+  assert.deepEqual(details, { status: 400, code: "invalid_value", type: "invalid_request_error" });
+  assert.deepEqual(Object.keys(details).sort(), ["code", "status", "type"]);
+  assert.doesNotMatch(JSON.stringify(details), /sensitive upstream detail/);
+});
+
+test("safe error categorization: 401/403 -> authentication, 429 -> rate_limit, 5xx -> provider_5xx", () => {
+  const unauthorized = new OpenAI.APIError(401, { message: "no" }, "401", undefined);
+  const rateLimited = new OpenAI.APIError(429, { message: "no" }, "429", undefined);
+  const serverError = new OpenAI.APIError(503, { message: "no" }, "503", undefined);
+
+  assert.equal(classifyProviderFailure(unauthorized), "authentication");
+  assert.equal(classifyProviderFailure(rateLimited), "rate_limit");
+  assert.equal(classifyProviderFailure(serverError), "provider_5xx");
+});
+
+test("safeProviderErrorDetails returns nothing for non-APIError failures (no secrets, no bodies)", () => {
+  assert.deepEqual(safeProviderErrorDetails(new Error("network reset, contained a fake api key sk-secret")), {});
+  assert.deepEqual(safeProviderErrorDetails("a plain string failure"), {});
+  assert.deepEqual(safeProviderErrorDetails(undefined), {});
+});
+
+test("OpenAI provider still completes successfully end to end (unaffected by the Gemini fix)", async () => {
+  await withChatServer(
+    provider(async () => JSON.stringify({ answer: "OpenAI still works.", suggestions: ["Next?"] }), "openai"),
+    async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/api/chat`, chatRequest("Tell me about Akash", "203.0.113.162"));
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        answer: "OpenAI still works.",
+        suggestedQuestions: ["Next?"],
+      });
+    },
+  );
 });
